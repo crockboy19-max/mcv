@@ -1,0 +1,453 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Succinct Monkey Climber</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: #0f0f12;
+            font-family: 'Arial', sans-serif;
+            overflow: hidden;
+            touch-action: manipulation;
+        }
+        #gameCanvas {
+            display: block;
+            margin: 0 auto;
+            background-color: #1a1a1f;
+        }
+        #scoreDisplay {
+            position: absolute;
+            top: 15px;
+            left: 15px;
+            color: #88d3ce;
+            font-size: 20px;
+            font-weight: bold;
+            text-shadow: 0 0 5px rgba(110, 69, 226, 0.7);
+            z-index: 10;
+        }
+        #healthBar {
+            position: absolute;
+            top: 15px;
+            right: 15px;
+            width: 120px;
+            height: 20px;
+            background: rgba(255, 146, 201, 0.2);
+            border-radius: 10px;
+            overflow: hidden;
+            border: 1px solid #ff92c9;
+            z-index: 10;
+        }
+        #healthFill {
+            height: 100%;
+            width: 100%;
+            background: linear-gradient(to right, #ff92c9, #ff2f92);
+            transition: width 0.3s;
+        }
+        .proof-bg {
+            position: absolute;
+            color: rgba(136, 211, 206, 0.05);
+            font-size: 80px;
+            font-weight: bold;
+            transform: rotate(-30deg);
+            pointer-events: none;
+            z-index: 0;
+            width: 300px;
+            text-align: center;
+        }
+        #startScreen, #gameOverOverlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(15, 15, 18, 0.9);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            color: #88d3ce;
+            font-size: 24px;
+            z-index: 100;
+        }
+        .game-button {
+            background: linear-gradient(45deg, #6e45e2, #88d3ce);
+            border: none;
+            color: white;
+            padding: 12px 24px;
+            border-radius: 6px;
+            margin-top: 20px;
+            font-size: 18px;
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+    <div id="startScreen">
+        <h1>Succinct Monkey Climber</h1>
+        <p>Swipe left/right or use arrow keys to move</p>
+        <button id="startBtn" class="game-button">Start Game</button>
+    </div>
+
+    <div id="scoreDisplay">Score: 0</div>
+    <div id="healthBar"><div id="healthFill"></div></div>
+    <canvas id="gameCanvas"></canvas>
+    <div id="proofBackground"></div>
+
+    <script>
+        // Game Setup
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const scoreDisplay = document.getElementById('scoreDisplay');
+        const healthFill = document.getElementById('healthFill');
+        const proofBg = document.getElementById('proofBackground');
+        const startScreen = document.getElementById('startScreen');
+        
+        // Set canvas size
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+        
+        // Game Constants
+        const TREE_COUNT = 3;
+        const TREE_WIDTH = 80;
+        const GAP = (canvas.width - TREE_COUNT * TREE_WIDTH) / (TREE_COUNT + 1);
+        const MONKEY_WIDTH = 60;
+        const MONKEY_HEIGHT = 80;
+        const OBSTACLE_TYPES = ['gproove-card', 'gpoof-card'];
+        const PALM_LEAF_COUNT = 20;
+        const MAX_HEALTH = 150;
+        
+        // Game State
+        let score = 0;
+        let health = MAX_HEALTH;
+        let gameSpeed = 1;
+        let monkeyPosition = 1;
+        let obstacles = [];
+        let palmLeaves = [];
+        let gameRunning = false;
+        let lastObstacleTime = 0;
+        let monkeySwingPhase = 0;
+        
+        // Images
+        const monkeyImg = new Image();
+        monkeyImg.src = 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 140"><defs><linearGradient id="monkeyGrad" x1="0%" y1="0%" x2="0%" y2="100%"><stop offset="0%" stop-color="%23FF9800"/><stop offset="100%" stop-color="%23F57C00"/></linearGradient><filter id="shadow" x="-20%" y="-20%" width="140%" height="140%"><feDropShadow dx="2" dy="4" stdDeviation="3" flood-color="rgba(0,0,0,0.5)"/></filter></defs><g filter="url(%23shadow)"><circle cx="50" cy="50" r="30" fill="url(%23monkeyGrad)"/><circle cx="50" cy="25" r="20" fill="url(%23monkeyGrad)"/><circle cx="40" cy="20" r="4" fill="%23333"/><circle cx="60" cy="20" r="4" fill="%23333"/><path d="M45 30 Q50 35 55 30" stroke="%23333" fill="transparent" stroke-width="2"/><path d="M20 40 L35 50 M80 40 L65 50" stroke="url(%23monkeyGrad)" stroke-width="10" stroke-linecap="round"/><path d="M35 80 L35 110 M65 80 L65 110" stroke="url(%23monkeyGrad)" stroke-width="10" stroke-linecap="round"/><path d="M80 60 Q95 70 85 90 Q75 110 65 100" stroke="url(%23monkeyGrad)" stroke-width="6" fill="none" stroke-linecap="round"/><circle cx="35" cy="50" r="5" fill="%235D4037"/><circle cx="65" cy="50" r="5" fill="%235D4037"/><path d="M40 50 Q50 60 60 50 Q50 40 40 50" fill="none" stroke="%236e45e2" stroke-width="1.5" stroke-dasharray="3,2"/></g></svg>';
+        
+        const obstacleImages = {
+            'gproove-card': generateCardSVG('#ff92c9', 'gproove'),
+            'gpoof-card': generateCardSVG('#88d3ce', 'gpoof')
+        };
+        
+        const palmLeafImg = new Image();
+        palmLeafImg.src = 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><path fill="%23FF4081" d="M50 0 Q70 40 50 80 Q30 40 50 0 Z"/></svg>';
+        
+        function generateCardSVG(color, text) {
+            const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 60"><rect x="5" y="5" width="90" height="50" rx="5" ry="5" fill="${color}" stroke="#fff" stroke-width="2"/><rect x="15" y="15" width="70" height="30" fill="rgba(255,255,255,0.3)"/><text x="50" y="35" font-family="Arial" font-size="14" fill="#fff" text-anchor="middle" font-weight="bold">${text}</text></svg>`;
+            const img = new Image();
+            img.src = 'data:image/svg+xml;utf8,' + encodeURIComponent(svg);
+            return img;
+        }
+        
+        // Initialize game elements
+        function initGame() {
+            // Create palm leaves
+            palmLeaves = [];
+            for (let i = 0; i < PALM_LEAF_COUNT; i++) {
+                palmLeaves.push({
+                    x: Math.random() * canvas.width,
+                    y: canvas.height - 20 + Math.random() * 30,
+                    scale: 0.5 + Math.random() * 0.7,
+                    rotation: Math.random() * 360
+                });
+            }
+            
+            // Create background proof text elements
+            proofBg.innerHTML = '';
+            const cols = Math.ceil(window.innerWidth / 300);
+            const rows = Math.ceil(window.innerHeight / 200);
+            
+            for (let r = 0; r < rows; r++) {
+                for (let c = 0; c < cols; c++) {
+                    const text = document.createElement('div');
+                    text.className = 'proof-bg';
+                    text.textContent = 'gprove';
+                    text.style.left = `${c * 300 + (r % 2) * 150}px`;
+                    text.style.top = `${r * 200}px`;
+                    proofBg.appendChild(text);
+                }
+            }
+        }
+        
+        // Game Loop
+        function gameLoop(timestamp) {
+            if (!gameRunning) return;
+            
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            drawBackground();
+            drawTrees();
+            
+            if (timestamp - lastObstacleTime > 1500 / gameSpeed) {
+                spawnObstacle();
+                lastObstacleTime = timestamp;
+            }
+            
+            updateObstacles();
+            monkeySwingPhase = (monkeySwingPhase + 0.05) % (Math.PI * 2);
+            drawMonkey();
+            drawPalmLeaves();
+            
+            score++;
+            scoreDisplay.textContent = `Score: ${Math.floor(score/10)}`;
+            gameSpeed = 1 + Math.floor(score/3000);
+            
+            requestAnimationFrame(gameLoop);
+        }
+        
+        function drawBackground() {
+            const bgGradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
+            bgGradient.addColorStop(0, '#0f0f12');
+            bgGradient.addColorStop(1, '#1a1a1f');
+            ctx.fillStyle = bgGradient;
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+        }
+        
+        function drawTrees() {
+            for (let i = 0; i < TREE_COUNT; i++) {
+                const x = GAP + i * (TREE_WIDTH + GAP);
+                
+                ctx.fillStyle = '#5D4037';
+                ctx.fillRect(x + TREE_WIDTH/2 - 15, 0, 30, canvas.height);
+                
+                ctx.strokeStyle = '#3E2723';
+                ctx.lineWidth = 2;
+                for (let j = 0; j < 20; j++) {
+                    const yPos = j * (canvas.height / 20);
+                    ctx.beginPath();
+                    ctx.moveTo(x + TREE_WIDTH/2 - 10, yPos);
+                    ctx.lineTo(x + TREE_WIDTH/2 + 10, yPos + 10);
+                    ctx.stroke();
+                }
+                
+                const leafGradient = ctx.createRadialGradient(
+                    x + TREE_WIDTH/2, -50, 10,
+                    x + TREE_WIDTH/2, -50, TREE_WIDTH + 20
+                );
+                leafGradient.addColorStop(0, '#2E7D32');
+                leafGradient.addColorStop(1, '#1B5E20');
+                
+                ctx.beginPath();
+                ctx.arc(x + TREE_WIDTH/2, -50, TREE_WIDTH + 20, 0, Math.PI, true);
+                ctx.fillStyle = leafGradient;
+                ctx.fill();
+                
+                ctx.fillStyle = 'rgba(110, 69, 226, 0.3)';
+                ctx.font = 'bold 20px Courier New';
+                ctx.textAlign = 'center';
+                ctx.fillText('◊', x + TREE_WIDTH/2, canvas.height - 40);
+            }
+        }
+        
+        function spawnObstacle() {
+            const treeIndex = Math.floor(Math.random() * TREE_COUNT);
+            const type = Math.random() > 0.3 ? 'gpoof-card' : 'gproove-card';
+            const width = 60;
+            const height = 40;
+            
+            obstacles.push({
+                x: GAP + treeIndex * (TREE_WIDTH + GAP) + TREE_WIDTH/2 - width/2,
+                y: -height,
+                width: width,
+                height: height,
+                type: type,
+                speed: 3 + Math.random() * 2 * gameSpeed,
+                rotation: (Math.random() - 0.5) * 15
+            });
+        }
+        
+        function updateObstacles() {
+            for (let i = obstacles.length - 1; i >= 0; i--) {
+                const obstacle = obstacles[i];
+                obstacle.y += obstacle.speed;
+                
+                ctx.save();
+                ctx.translate(obstacle.x + obstacle.width/2, obstacle.y + obstacle.height/2);
+                ctx.rotate(obstacle.rotation * Math.PI / 180);
+                ctx.drawImage(
+                    obstacleImages[obstacle.type],
+                    -obstacle.width/2,
+                    -obstacle.height/2,
+                    obstacle.width,
+                    obstacle.height
+                );
+                ctx.restore();
+                
+                if (
+                    Math.floor(obstacle.x / (TREE_WIDTH + GAP)) === monkeyPosition &&
+                    obstacle.y + obstacle.height > canvas.height/2 &&
+                    obstacle.y < canvas.height/2 + MONKEY_HEIGHT
+                ) {
+                    if (obstacle.type === 'gproove-card') {
+                        health = Math.min(MAX_HEALTH, health + 25);
+                        showEffect(obstacle.x + obstacle.width/2, obstacle.y, '+25', '#88d3ce');
+                    } else {
+                        health -= 15;
+                        showEffect(obstacle.x + obstacle.width/2, obstacle.y, '-15', '#ff4757');
+                    }
+                    
+                    healthFill.style.width = `${(health/MAX_HEALTH)*100}%`;
+                    obstacles.splice(i, 1);
+                    
+                    if (health <= 0) {
+                        gameOver();
+                        return;
+                    }
+                }
+                
+                if (obstacle.y > canvas.height) {
+                    obstacles.splice(i, 1);
+                }
+            }
+        }
+        
+        function showEffect(x, y, text, color) {
+            const effect = {
+                x: x,
+                y: y,
+                text: text,
+                color: color,
+                alpha: 1,
+                vy: -1
+            };
+            
+            function animate() {
+                ctx.font = 'bold 20px Arial';
+                ctx.fillStyle = `${effect.color}${Math.floor(effect.alpha * 255).toString(16).padStart(2, '0')}`;
+                ctx.textAlign = 'center';
+                ctx.fillText(effect.text, effect.x, effect.y);
+                
+                effect.y += effect.vy;
+                effect.alpha -= 0.02;
+                effect.vy *= 0.95;
+                
+                if (effect.alpha > 0) {
+                    requestAnimationFrame(animate);
+                }
+            }
+            
+            animate();
+        }
+        
+        function drawMonkey() {
+            const treeCenter = GAP + monkeyPosition * (TREE_WIDTH + GAP) + TREE_WIDTH/2;
+            const y = canvas.height/2;
+            const swingOffset = Math.sin(monkeySwingPhase) * 5;
+            
+            ctx.save();
+            ctx.translate(treeCenter, y + swingOffset);
+            ctx.drawImage(
+                monkeyImg,
+                -MONKEY_WIDTH/2,
+                -MONKEY_HEIGHT/2,
+                MONKEY_WIDTH,
+                MONKEY_HEIGHT
+            );
+            
+            if (health > MAX_HEALTH * 0.7) {
+                ctx.beginPath();
+                ctx.arc(0, -MONKEY_HEIGHT/2 + 15, MONKEY_WIDTH/2 + 5, 0, Math.PI * 2);
+                ctx.strokeStyle = 'rgba(110, 69, 226, 0.7)';
+                ctx.lineWidth = 2;
+                ctx.setLineDash([5, 3]);
+                ctx.stroke();
+                ctx.setLineDash([]);
+            }
+            ctx.restore();
+        }
+        
+        function drawPalmLeaves() {
+            palmLeaves.forEach(leaf => {
+                ctx.save();
+                ctx.translate(leaf.x, leaf.y);
+                ctx.scale(leaf.scale, leaf.scale);
+                ctx.rotate(leaf.rotation * Math.PI / 180);
+                ctx.drawImage(palmLeafImg, -50, -50, 100, 100);
+                ctx.restore();
+            });
+        }
+        
+        function gameOver() {
+            gameRunning = false;
+            
+            const overlay = document.createElement('div');
+            overlay.id = 'gameOverOverlay';
+            overlay.innerHTML = `
+                <h2>Game Over!</h2>
+                <p>Final Score: ${Math.floor(score/10)}</p>
+                <button id="restartBtn" class="game-button">Play Again</button>
+            `;
+            document.body.appendChild(overlay);
+            
+            // Event delegation for restart button
+            overlay.addEventListener('click', (e) => {
+                if (e.target.id === 'restartBtn') {
+                    resetGame();
+                    overlay.remove();
+                }
+            });
+        }
+        
+        function resetGame() {
+            score = 0;
+            health = MAX_HEALTH;
+            gameSpeed = 1;
+            monkeyPosition = 1;
+            obstacles = [];
+            healthFill.style.width = '100%';
+            scoreDisplay.textContent = 'Score: 0';
+            gameRunning = true;
+            requestAnimationFrame(gameLoop);
+        }
+        
+        // Controls
+        document.addEventListener('keydown', (e) => {
+            if (!gameRunning) return;
+            if (e.key === 'ArrowLeft') monkeyPosition = Math.max(0, monkeyPosition - 1);
+            else if (e.key === 'ArrowRight') monkeyPosition = Math.min(TREE_COUNT - 1, monkeyPosition + 1);
+        });
+        
+        let touchStartX = 0;
+        document.addEventListener('touchstart', (e) => {
+            if (!gameRunning) return;
+            touchStartX = e.touches[0].clientX;
+            e.preventDefault();
+        }, { passive: false });
+        
+        document.addEventListener('touchend', (e) => {
+            if (!gameRunning) return;
+            const touchEndX = e.changedTouches[0].clientX;
+            const diff = touchEndX - touchStartX;
+            
+            if (Math.abs(diff) > 30) {
+                if (diff > 0 && monkeyPosition < TREE_COUNT - 1) monkeyPosition++;
+                else if (diff < 0 && monkeyPosition > 0) monkeyPosition--;
+            }
+            e.preventDefault();
+        }, { passive: false });
+        
+        // Start game button
+        document.getElementById('startBtn').addEventListener('click', () => {
+            startScreen.style.display = 'none';
+            initGame();
+            resetGame();
+        });
+        
+        // Handle window resize
+        window.addEventListener('resize', () => {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+            initGame();
+        });
+    </script>
+</body>
+</html>
